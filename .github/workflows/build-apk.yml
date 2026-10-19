@@ -15,23 +15,64 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
-      - name: Install dependencies
+
+      - name: Fix Project Structure
+        run: |
+          # Project kahan hai pata karo
+          if [ -f "Ansuni-ankahi-batain-/package.json" ]; then cd Ansuni-ankahi-batain-; echo "PROJECT_DIR=Ansuni-ankahi-batain-" >> $GITHUB_ENV; else echo "PROJECT_DIR=." >> $GITHUB_ENV; fi
+          ls -la
+          cat index.html || cat Ansuni-ankahi-batain-/index.html || true
+          
+          # Agar subfolder me hai to root me lao
+          if [ -d "Ansuni-ankahi-batain-" ] && [ -f "Ansuni-ankahi-batain-/package.json" ]; then
+            shopt -s dotglob
+            mv Ansuni-ankahi-batain-/* . || true
+          fi
+          
+          # index.html fix: /src/main.tsx -> ./main.tsx
+          sed -i 's|"/src/main.tsx"|"./main.tsx"|g' index.html || true
+          sed -i "s|'/src/main.tsx'| './main.tsx'|g" index.html || true
+          sed -i 's|/src/main.tsx|./main.tsx|g' index.html || true
+          
+          # main.tsx fix: ../index.css -> ./index.css
+          sed -i 's|\.\./index.css|./index.css|g' main.tsx || true
+          sed -i 's|./App.tsx|./App|g' main.tsx || true
+          
+          # vite config banao agar nahi hai
+          if [ ! -f vite.config.ts ] && [ ! -f vite.config.js ]; then
+          cat > vite.config.ts << 'EOF'
+          import { defineConfig } from 'vite'
+          import react from '@vitejs/plugin-react'
+          export default defineConfig({ plugins: [react()], base: './' })
+          EOF
+          fi
+          
+          cat index.html
+          cat main.tsx
+          cat vite.config.ts || true
+
+      - name: Install deps
         run: npm install --legacy-peer-deps
+
       - name: Install Capacitor
         run: npm install --legacy-peer-deps @capacitor/core @capacitor/cli @capacitor/android
-      - name: Build web
-        run: npm run build
-      - name: Init Capacitor
+
+      - name: Build Web
+        run: npx vite build
+
+      - name: Setup Capacitor
         run: |
-          npx cap init "Ansuni Ankahi Bate" com.ansuni.ankahi --web-dir=dist || true
-          npx cap add android || true
+          rm -rf android
+          npx cap init "Ansuni Ankahi Bate" com.ansuni.ankahi --web-dir=dist
+          npx cap add android
           npx cap copy android
-          npx cap sync android
-      - name: Build Debug APK
+
+      - name: Build APK
         run: |
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
