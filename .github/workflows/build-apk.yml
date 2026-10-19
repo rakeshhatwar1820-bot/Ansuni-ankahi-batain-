@@ -6,83 +6,105 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Setup Node 20
+      
+      - name: Setup Node 20 & Java 17
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Setup Java 17
-        uses: actions/setup-java@v5
+      - uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Fix ALL Project Structure
+      - name: FRESH START - Rebuild Correct Structure
         run: |
-          echo "=== Before ==="
-          ls -la
-          echo "=== Finding folders ==="
-          find . -type d -name "components" | head -20
-          find . -type d -name "services" | head -20
+          echo "Finding your real files..."
+          APP=$(find . -name "App.tsx" -type f | head -1)
+          MAIN=$(find . -name "main.tsx" -type f | head -1)
+          COMP_DIR=$(find . -type d -name "components" | head -1)
+          SERV_DIR=$(find . -type d -name "services" | head -1)
+          echo "App found at: $APP"
+          echo "Main found at: $MAIN"
+          echo "Components at: $COMP_DIR"
+          echo "Services at: $SERV_DIR"
           
-          # 1. Agar sab kuch Ansuni-ankahi-batain- subfolder me hai to bahar lao
-          if [ -d "Ansuni-ankahi-batain-" ]; then
-            cp -rn Ansuni-ankahi-batain-/* . 2>/dev/null || true
-            cp -rn Ansuni-ankahi-batain-/.* . 2>/dev/null || true
-          fi
+          # Backup content
+          mkdir -p /tmp/backup
+          cp $APP /tmp/backup/App.tsx 2>/dev/null || true
+          cp $MAIN /tmp/backup/main.tsx 2>/dev/null || true
+          cp -r $COMP_DIR /tmp/backup/components 2>/dev/null || true
+          cp -r $SERV_DIR /tmp/backup/services 2>/dev/null || true
+          find . -name "*.css" | xargs -I{} cp {} /tmp/backup/ 2>/dev/null || true
           
-          # 2. Agar src folder hai to uske andar se components/services bahar lao
-          if [ -d "src/components" ]; then mkdir -p components; cp -rn src/components/* components/ 2>/dev/null; fi
-          if [ -d "src/services" ]; then mkdir -p services; cp -rn src/services/* services/ 2>/dev/null; fi
-          if [ -d "src" ]; then cp -rn src/* . 2>/dev/null || true; fi
+          # Now create CLEAN structure
+          rm -rf src components services dist android
+          mkdir -p src/components src/services
           
-          # 3. Kahin bhi deep me components/services ho to dhoondh ke lao
-          for d in $(find . -type d -name "components" | head -5); do
-            if [ "$d" != "./components" ] && [ -d "$d" ]; then mkdir -p ./components; cp -rn $d/* ./components/ 2>/dev/null || true; fi
-          done
-          for d in $(find . -type d -name "services" | head -5); do
-            if [ "$d" != "./services" ] && [ -d "$d" ]; then mkdir -p ./services; cp -rn $d/* ./services/ 2>/dev/null || true; fi
-          done
+          # Restore files to correct place
+          cp /tmp/backup/App.tsx src/App.tsx 2>/dev/null || echo "App.tsx missing"
+          cp /tmp/backup/main.tsx src/main.tsx 2>/dev/null || echo "main.tsx missing"
+          cp -r /tmp/backup/components/* src/components/ 2>/dev/null || true
+          cp -r /tmp/backup/services/* src/services/ 2>/dev/null || true
+          cp /tmp/backup/*.css src/ 2>/dev/null || true
+          cp /tmp/backup/*.css ./ 2>/dev/null || true
+          ls /tmp/backup/
           
-          # 4. index.html fix
-          sed -i 's|/src/main.tsx|./main.tsx|g' index.html || true
-          sed -i 's|../index.css|./index.css|g' main.tsx || true
-          sed -i 's|./App.tsx|./App|g' main.tsx || true
+          # Fix main.tsx imports
+          cat > src/main.tsx << 'EOF'
+          import React from 'react'
+          import ReactDOM from 'react-dom/client'
+          import App from './App.tsx'
+          import './index.css'
+          ReactDOM.createRoot(document.getElementById('root')!).render(
+            <React.StrictMode>
+              <App />
+            </React.StrictMode>,
+          )
+          EOF
           
-          echo "=== After fix ==="
-          ls -la
-          ls -la components/ || true
-          ls -la services/ || true
-          cat index.html
-
-      - name: Install deps
-        run: npm install --legacy-peer-deps
-
-      - name: Install Capacitor
-        run: npm install --legacy-peer-deps @capacitor/core @capacitor/cli @capacitor/android @vitejs/plugin-react
-
-      - name: Create vite config if missing
-        run: |
-          if [ ! -f vite.config.ts ] && [ ! -f vite.config.js ]; then
+          # Create perfect index.html
+          cat > index.html << 'EOF'
+          <!DOCTYPE html>
+          <html lang="en">
+            <head>
+              <meta charset="UTF-8" />
+              <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+              <title>Ansuni Ankahi Bate</title>
+            </head>
+            <body>
+              <div id="root"></div>
+              <script type="module" src="/src/main.tsx"></script>
+            </body>
+          </html>
+          EOF
+          
+          # Create vite config
           cat > vite.config.ts << 'EOF'
           import { defineConfig } from 'vite'
           import react from '@vitejs/plugin-react'
-          export default defineConfig({ plugins: [react()], base: './' })
+          export default defineConfig({
+            plugins: [react()],
+          })
           EOF
-          fi
-          cat vite.config.ts || cat vite.config.js || true
+          
+          echo "=== FINAL STRUCTURE ==="
+          ls -R src | head -100
+          cat src/App.tsx | head -20
+
+      - name: Install deps
+        run: |
+          npm install --legacy-peer-deps
+          npm install --legacy-peer-deps @capacitor/core @capacitor/cli @capacitor/android @vitejs/plugin-react
 
       - name: Build Web
         run: npx vite build
 
-      - name: Setup Capacitor
+      - name: Setup Capacitor & Build APK
         run: |
           rm -rf android
           npx cap init "Ansuni Ankahi Bate" com.ansuni.ankahi --web-dir=dist
           npx cap add android
           npx cap copy android
-
-      - name: Build APK
-        run: |
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug
