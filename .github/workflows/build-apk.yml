@@ -16,29 +16,52 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Fix Project Structure
+      - name: Fix ALL Project Structure
         run: |
-          # Project kahan hai pata karo
-          if [ -f "Ansuni-ankahi-batain-/package.json" ]; then cd Ansuni-ankahi-batain-; echo "PROJECT_DIR=Ansuni-ankahi-batain-" >> $GITHUB_ENV; else echo "PROJECT_DIR=." >> $GITHUB_ENV; fi
+          echo "=== Before ==="
           ls -la
-          cat index.html || cat Ansuni-ankahi-batain-/index.html || true
+          echo "=== Finding folders ==="
+          find . -type d -name "components" | head -20
+          find . -type d -name "services" | head -20
           
-          # Agar subfolder me hai to root me lao
-          if [ -d "Ansuni-ankahi-batain-" ] && [ -f "Ansuni-ankahi-batain-/package.json" ]; then
-            shopt -s dotglob
-            mv Ansuni-ankahi-batain-/* . || true
+          # 1. Agar sab kuch Ansuni-ankahi-batain- subfolder me hai to bahar lao
+          if [ -d "Ansuni-ankahi-batain-" ]; then
+            cp -rn Ansuni-ankahi-batain-/* . 2>/dev/null || true
+            cp -rn Ansuni-ankahi-batain-/.* . 2>/dev/null || true
           fi
           
-          # index.html fix: /src/main.tsx -> ./main.tsx
-          sed -i 's|"/src/main.tsx"|"./main.tsx"|g' index.html || true
-          sed -i "s|'/src/main.tsx'| './main.tsx'|g" index.html || true
-          sed -i 's|/src/main.tsx|./main.tsx|g' index.html || true
+          # 2. Agar src folder hai to uske andar se components/services bahar lao
+          if [ -d "src/components" ]; then mkdir -p components; cp -rn src/components/* components/ 2>/dev/null; fi
+          if [ -d "src/services" ]; then mkdir -p services; cp -rn src/services/* services/ 2>/dev/null; fi
+          if [ -d "src" ]; then cp -rn src/* . 2>/dev/null || true; fi
           
-          # main.tsx fix: ../index.css -> ./index.css
-          sed -i 's|\.\./index.css|./index.css|g' main.tsx || true
+          # 3. Kahin bhi deep me components/services ho to dhoondh ke lao
+          for d in $(find . -type d -name "components" | head -5); do
+            if [ "$d" != "./components" ] && [ -d "$d" ]; then mkdir -p ./components; cp -rn $d/* ./components/ 2>/dev/null || true; fi
+          done
+          for d in $(find . -type d -name "services" | head -5); do
+            if [ "$d" != "./services" ] && [ -d "$d" ]; then mkdir -p ./services; cp -rn $d/* ./services/ 2>/dev/null || true; fi
+          done
+          
+          # 4. index.html fix
+          sed -i 's|/src/main.tsx|./main.tsx|g' index.html || true
+          sed -i 's|../index.css|./index.css|g' main.tsx || true
           sed -i 's|./App.tsx|./App|g' main.tsx || true
           
-          # vite config banao agar nahi hai
+          echo "=== After fix ==="
+          ls -la
+          ls -la components/ || true
+          ls -la services/ || true
+          cat index.html
+
+      - name: Install deps
+        run: npm install --legacy-peer-deps
+
+      - name: Install Capacitor
+        run: npm install --legacy-peer-deps @capacitor/core @capacitor/cli @capacitor/android @vitejs/plugin-react
+
+      - name: Create vite config if missing
+        run: |
           if [ ! -f vite.config.ts ] && [ ! -f vite.config.js ]; then
           cat > vite.config.ts << 'EOF'
           import { defineConfig } from 'vite'
@@ -46,16 +69,7 @@ jobs:
           export default defineConfig({ plugins: [react()], base: './' })
           EOF
           fi
-          
-          cat index.html
-          cat main.tsx
-          cat vite.config.ts || true
-
-      - name: Install deps
-        run: npm install --legacy-peer-deps
-
-      - name: Install Capacitor
-        run: npm install --legacy-peer-deps @capacitor/core @capacitor/cli @capacitor/android
+          cat vite.config.ts || cat vite.config.js || true
 
       - name: Build Web
         run: npx vite build
